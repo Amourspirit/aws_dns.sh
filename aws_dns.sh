@@ -26,10 +26,14 @@
 # Created 2020-06-30
 # Github: https://github.com/Amourspirit/aws_dns.sh
 # File Name: aws_dns.sh
-# Version 1.0.0
+# Version 1.0.1
 #Variable Declaration - Change These
 HOSTED_ZONE_FILE="$HOME/.aws_dns/zone"
 CONFIG_FILE="$HOME/.aws_dns/config.cfg"
+TMP_FILE='/tmp/current_ip_address'
+# Age in minutes to keep ipaddress store in tmp file
+MAX_IP_AGE=5
+
 
 # function: _trim
 # Param 1: the variable to _trim whitespace from
@@ -60,7 +64,17 @@ function _ip_valid() {
 		echo 1
 	fi
 }
-
+# Gets if a file is older then a time passed in as minutes
+# @param1 file to check
+# @param2 Age of file in minutes
+# Return 1 if file is older then time passed in; Otherwise, null
+function _file_older() {
+	local _file="$1"
+	local _min="$2"
+	if ! [[ $(stat -c %Y -- "${_file}") -lt $(date +%s --date="${_min} min ago") ]]; then
+		echo 1
+	fi
+}
 # Get INI _section
 function ReadINI_Sections(){
   local filename="$1"
@@ -112,7 +126,22 @@ if [[ -z "$HOSTED_ZONE_ID" ]]; then
 	exit 1
 fi
 #get current IP address
-IP=$(wget -qT 20 -O - "https://checkip.amazonaws.com/")
+IP_VALID=0
+if [[ -r "${TMP_FILE}" ]] && [[ $(_file_older "${TMP_FILE}" "${MAX_IP_AGE}") ]]; then
+	IP=$(_trim $(cat "${TMP_FILE}"))
+	IP_VALID=$(_ip_valid "${IP}")
+	echo 'Optained ip address from tmp file'
+fi
+if [[ $IP_VALID -ne 1 ]]; then
+	IP=$(wget -qT 20 -O - "https://checkip.amazonaws.com/") && IP=$(_trim "$IP")
+	IP_VALID=$(_ip_valid "${IP}")
+	echo "${IP}" > "${TMP_FILE}"
+	echo 'Optained ip address Internet'
+fi
+if [[ $IP_VALID -ne 1 ]]; then
+	echo 'Unable to optain valid ip address. Halting'
+	exit 1
+fi
 if ! [[ $(_ip_valid $IP) ]]; then
 	echo 'Not a valid IP4 Address'
 	exit 1
