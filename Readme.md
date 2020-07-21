@@ -12,19 +12,12 @@ To get started, head over to the AWS Route 53 Management console. If you don’t
 
 ### Zone ID
 
-Find or create the hosted zone for your domain, which will contain all of the records. Store this zone value in a zone file on Route 53.
+Find or create the hosted zone for eac of your domains. For each domain or sub domain you will need to include the zone id in the `config.cfg` file show below.
 
+**Figure 1:**  
 ![d0584bb8.png](https://i.postimg.cc/kXrBcLRV/d0584bb8.png)
 
-Replace **zMyZoneID** the your zone information
-
-```txt
-mkdir -p ~/.aws_dns && touch ~/.aws_dns/zone && chmod 0600 ~/.aws_dns/zone && echo 'zMyZoneID' >> ~/.aws_dns/zone
-```
-
-With the above command your zone informations will be capture in `~/.aws_dns/zone` and the file will be set to read and write only for the owner.
-
-You’ll want to make a placeholder A record, so that the script has something to reference. You can set this to something obviously not correct—255.255.255.255 would work—to test the script’s functionality.
+It is recommend that each "domain/sub domain" have an `A` reccord so this script has something to reference. You can set this to something obviously not correct—255.255.255.255 would work—to test the script’s functionality.
 
 ### Configuraton file
 
@@ -33,6 +26,22 @@ Place all domains to update in your Route Configuration into a configuration fil
 ```txt
 mkdir -p ~/.aws_dns && touch ~/.aws_dns/config.cfg && nano ~/.aws_dns/config.cfg
 ```
+
+The configuration sections names only requirement is that they arell all unique names. Only use alpha-numeric names and `_` (undersores) in a section name.  
+The recommended naming convention is your domain name ( replace `.` with `_`) and the `type`. For instance `library.mydomain.tld.` for an `A` type record would have a section name of `[LIBRARY_MYDOMAIN_TLD_A]`
+
+The `.` at the end of each domain name is optional.  
+For instance `domain=library.mydomain.tld.` and `domain=library.mydomain.tld` are both valid.
+
+Four setting can be used in each section.
+
+* domain (the domain or sub-domain to update record for)
+* type (the type of record such as `A` or `AAAA`)
+* ttl (time to live in seconds)
+* zone (zone id as seen in *figure 1*)
+
+`domain` and `zone` are required for each section.  
+`type` and `ttl` have defaults and are optional.
 
 Defalut `type="A"`
 Default `ttl=60`
@@ -44,16 +53,24 @@ Example cfg file
 domain=library.mydomain.tld.
 type="A"
 ttl=60
+zone=Z556URT733PKLW
 [WP_MYDOMAIN_TLD_A]
-domain=WP.mydomain.tld
+domain=wp.mydomain.tld
 type="A"
 ttl=60
+zone=Z556URT733PKLW
 [LIBSTAFF_MYDOMAIN_TLD_A]
 domain=libstaff.mydomain.tld.
 [MYDOMAIN_TLD_A]
 domain=mydomain.tld
 type="A"
 TTL=120
+zone=Z556URT733PKLW
+[myfantasticdomainname_com_a]
+domain=myfantasticdomainname.com.
+type="A"
+TTL=300
+zone=ZRTU7R4GGHWEC4
 ```
 
 ### AWS CLI

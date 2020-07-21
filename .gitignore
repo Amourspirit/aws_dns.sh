@@ -8,6 +8,7 @@
 !aws_dns.sh
 !Readme.md
 !LICENSE
+!sample.cfg
 # Ignore all files ending with .log
 **.log
 

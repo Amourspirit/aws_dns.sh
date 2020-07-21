@@ -24,19 +24,20 @@
 # SOFTWARE.
 # Author: Paul Moss
 # Created 2020-06-30
+# Modifed 2020-07-20
 # Github: https://github.com/Amourspirit/aws_dns.sh
 # File Name: aws_dns.sh
-# Version 1.0.1
+# Version 2.0.0
 #Variable Declaration - Change These
-HOSTED_ZONE_FILE="$HOME/.aws_dns/zone"
 CONFIG_FILE="$HOME/.aws_dns/config.cfg"
 TMP_FILE='/tmp/current_ip_address'
 # Age in minutes to keep ipaddress store in tmp file
 MAX_IP_AGE=5
-
+#region functions
+#region _trim()
 
 # function: _trim
-# Param 1: the variable to _trim whitespace from
+# Param 1: the variable to trim whitespace from
 # Usage:
 #   while read line; do
 #       if [[ "$line" =~ ^[^#]*= ]]; then
@@ -51,6 +52,10 @@ function _trim () {
     var="${var%"${var##*[![:space:]]}"}";   # remove trailing whitespace characters
     echo -n "$var";
 }
+#endregion
+
+#region _ip_valid()
+
 # Test if a value is in the format of a valid IP4 Address
 # Usage:
 # if [[ $(_ip_valid $IP) ]]; then
@@ -59,38 +64,53 @@ function _trim () {
 #   echo 'Invalid IP'
 # fi
 function _ip_valid() {
-	_ip="$1"
-	if [[ $_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-		echo 1
-	fi
+  local _ip="$1"
+    if ( ! [[ -z $_ip ]] ) && [[ $_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        echo 1
+    fi
 }
+#endregion
+
+#region _file_older()
+
 # Gets if a file is older then a time passed in as minutes
 # @param1 file to check
 # @param2 Age of file in minutes
-# Return 1 if file is older then time passed in; Otherwise, null
+# @return 1 if file is older then time passed in; Otherwise, null
+# @example:
+# if [[ $(_file_older "${FILE}" 5) ]]; then;
+#    echo 'File is older'
+# fi
 function _file_older() {
-	local _file="$1"
-	local _min="$2"
-	if ! [[ $(stat -c %Y -- "${_file}") -lt $(date +%s --date="${_min} min ago") ]]; then
-		echo 1
-	fi
+    local _file="$1"
+    local _min="$2"
+    if [[ $(stat -c %Y -- "${_file}") -lt $(date +%s --date="${_min} min ago") ]]; then
+        echo 1
+    fi
 }
+#endregion
+
+#region ReadINI_Sections()
+
 # Get INI _section
-function ReadINI_Sections(){
-  local filename="$1"
-  awk '{ if ($1 ~ /^\[/) _section=tolower(gensub(/\[(.+)\]/,"\\1",1,$1)); configuration[_section]=1 } END {for (key in configuration) { print key} }' ${filename}
+function ReadINI_Sections() {
+    local filename="$1"
+    awk '{ if ($1 ~ /^\[/) _section=tolower(gensub(/\[(.+)\]/,"\\1",1,$1)); configuration[_section]=1 } END {for (key in configuration) { print key} }' ${filename}
 }
+#endregion
 
+#region GetINI_Sections()
 # Get/Set all INI _sections
-function GetINI_Sections(){
-  local filename="$1"
+function GetINI_Sections() {
+    local filename="$1"
 
-  _sections="$(ReadINI_Sections $filename)"
-	for _section in $_sections; do
-		array_name="configuration_${_section}"
-		declare -g -A ${array_name}
-	done
-	eval $(awk -F= '{ 
+    _sections="$(ReadINI_Sections $filename)"
+    for _section in $_sections; do
+        array_name="configuration_${_section}"
+        declare -g -A ${array_name}
+    done
+    eval $(
+        awk -F= '{ 
 					if ($1 ~ /^\[/)
 						_section=tolower(gensub(/\[(.+)\]/,"\\1",1,$1))
 					else if ($1 !~ /^$/ && $1 !~ /^;/) {
@@ -107,85 +127,85 @@ function GetINI_Sections(){
 							for (key in configuration[_section])
 								print "configuration_"_section"[\""key"\"]=\""configuration[_section][key]"\";"
 					}' ${filename}
-		)
+    )
 }
+#endregion
+#endregion
 
 if [[ ! -r "$CONFIG_FILE" ]]; then
-	echo "Unable to read file: $CONFIG_FILE"
-	exit 1
+    echo "Unable to read file: $CONFIG_FILE"
+    exit 1
 fi
-if [[ ! -r "$HOSTED_ZONE_FILE" ]]; then
-	echo "Unable to read file: $HOME/.aws_dns/zone"
-	exit 1
-fi
-HOSTED_ZONE_ID="$(cat $HOSTED_ZONE_FILE)"
-HOSTED_ZONE_ID=$(_trim "$HOSTED_ZONE_ID")
-if [[ -z "$HOSTED_ZONE_ID" ]]; then
-	echo -n 'Empyt hosted zone file. Place the value of your hosted zone in file: '
-	echo "$HOSTED_ZONE_FILE"
-	exit 1
-fi
+
+#region test ip address
 #get current IP address
 IP_VALID=0
 if [[ -r "${TMP_FILE}" ]] && [[ $(_file_older "${TMP_FILE}" "${MAX_IP_AGE}") ]]; then
-	IP=$(_trim $(cat "${TMP_FILE}"))
-	IP_VALID=$(_ip_valid "${IP}")
-	echo 'Optained ip address from tmp file'
+    IP=$(_trim $(cat "${TMP_FILE}"))
+    IP_VALID=$(_ip_valid "${IP}")
+    echo 'Optained ip address from tmp file'
 fi
 if [[ $IP_VALID -ne 1 ]]; then
-	IP=$(wget -qT 20 -O - "https://checkip.amazonaws.com/") && IP=$(_trim "$IP")
-	IP_VALID=$(_ip_valid "${IP}")
-	echo "${IP}" > "${TMP_FILE}"
-	echo 'Optained ip address Internet'
+    IP=$(wget -qT 20 -O - "https://checkip.amazonaws.com/") && IP=$(_trim "$IP")
+    IP_VALID=$(_ip_valid "${IP}")
+    echo "${IP}" >"${TMP_FILE}"
+    echo 'Optained ip address Internet'
 fi
 if [[ $IP_VALID -ne 1 ]]; then
-	echo 'Unable to optain valid ip address. Halting'
-	exit 1
+    echo 'Unable to optain valid ip address. Halting'
+    exit 1
 fi
 if ! [[ $(_ip_valid $IP) ]]; then
-	echo 'Not a valid IP4 Address'
-	exit 1
+    echo 'Not a valid IP4 Address'
+    exit 1
 fi
+#endregion
 
 GetINI_Sections "$CONFIG_FILE"
 # echo 'Config Read'
 for _section in $(ReadINI_Sections "$CONFIG_FILE"); do
-	# echo "[${_section}]"
-	# create an array that contains configuration values
-	# put values that need to be evaluated using eval in single quotes
-	typeset -A SCRIPT_CONF # init array
-	SCRIPT_CONF=( # set default values in config array
-		[domain]=''
-		[type]='A'
-		[ttl]=60
-	)
-	for key in $(eval echo \$\{'!'configuration_${_section}[@]\}); do
-		SCRIPT_CONF["${key}"]="$(eval echo \$\{configuration_${_section}[$key]\})"
-	done
-	if [[ ! -z "${SCRIPT_CONF[domain]}" ]]; then
-		if [[ "${SCRIPT_CONF[domain]}" != *. ]]; then
-			# add . to end of domain name if it does not exist already
-			SCRIPT_CONF[domain]="${SCRIPT_CONF[domain]}."
-		fi
+    # echo "[${_section}]"
+    # create an array that contains configuration values
+    # put values that need to be evaluated using eval in single quotes
+    typeset -A SCRIPT_CONF # init array
+    SCRIPT_CONF=(# set default values in config array
+        [domain]=''
+        [type]='A'
+        [ttl]=60
+        [zone]=''
+    )
+    for key in $(eval echo \$\{'!'configuration_${_section}[@]\}); do
+        SCRIPT_CONF["${key}"]="$(eval echo \$\{configuration_${_section}[$key]\})"
+    done
+    if [[ ! -z "${SCRIPT_CONF[domain]}" ]]; then
+        HOSTED_ZONE_ID=$(_trim "${SCRIPT_CONF[zone]}")
+        if [[ -z "${HOSTED_ZONE_ID}" ]]; then
+            echo 'no zone for domain. skipping...'
+            continue
+        fi
+        if [[ "${SCRIPT_CONF[domain]}" != *. ]]; then
+            # add . to end of domain name if it does not exist already
+            SCRIPT_CONF[domain]="${SCRIPT_CONF[domain]}."
+        fi
 
-		#get current
-		aws route53 list-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID | \
-		jq -r '.ResourceRecordSets[] | select (.Name == "'"${SCRIPT_CONF[domain]}"'") | select (.Type == "'"${SCRIPT_CONF[type]}"'") | .ResourceRecords[0].Value' > "/tmp/current_${_section}_route53_value"
+        #get current
+        aws route53 list-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID |
+            jq -r '.ResourceRecordSets[] | select (.Name == "'"${SCRIPT_CONF[domain]}"'") | select (.Type == "'"${SCRIPT_CONF[type]}"'") | .ResourceRecords[0].Value' >"/tmp/current_${_section}_route53_value"
 
-		# cat "/tmp/current_${_section}_route53_value"
+        # cat "/tmp/current_${_section}_route53_value"
 
-		#check if IP is different from Route 53
-		if grep -Fxq "$IP" "/tmp/current_${_section}_route53_value"; then
-			echo "IP Has Not Changed, Exiting"
-			# exit 1
-			continue
-		fi
+        #check if IP is different from Route 53
+        if grep -Fxq "$IP" "/tmp/current_${_section}_route53_value"; then
+            echo "IP Has Not Changed, Exiting"
+            # exit 1
+            continue
+        fi
 
-		echo "IP Changed, Updating Records"
+        echo "IP Changed, Updating Records"
 
-#prepare route 53 payload
-# IFS='' read -r -d '' String <<"EOF"
-cat > /tmp/route53_changes.json << EOF
+        #prepare route 53 payload
+        # IFS='' read -r -d '' String <<"EOF"
+        cat >/tmp/route53_changes.json <<EOF
 {
       "Comment":"Updated From DDNS Shell Script",
       "Changes":[
@@ -205,8 +225,8 @@ cat > /tmp/route53_changes.json << EOF
       ]
     }
 EOF
-		#update records
-		aws route53 change-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID --change-batch file:///tmp/route53_changes.json >> /dev/null
-	fi
+        #update records
+        aws route53 change-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID --change-batch file:///tmp/route53_changes.json >>/dev/null
+    fi
 done
 exit 0
